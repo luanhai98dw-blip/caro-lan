@@ -12,19 +12,6 @@ app.use(express.static("public"));
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// ====== dữ liệu phòng ======
-/**
- * rooms[code] = {
- *   code,
- *   players: [{ id, name, ws, symbol: 1|2 }], // 1: X, 2: O
- *   spectators: [{ id, name, ws }],
- *   board: number[][],
- *   turn: 1|2,
- *   status: "waiting"|"playing"|"ended",
- *   winner: 0|1|2,
- *   winLine: [{x,y}] | null,
- * }
- */
 const rooms = new Map();
 
 function makeEmptyBoard() {
