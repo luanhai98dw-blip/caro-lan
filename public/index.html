@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Caro LAN - Phòng chơi</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">CARO LAN</div>
+      <div class="sub">Socket (WebSocket) • Tạo phòng / Vào phòng • 2 người chơi X/O</div>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <div class="field">
+          <label>Tên của bạn</label>
+          <input id="name" placeholder="VD: Luân" maxlength="20" />
+        </div>
+
+        <div class="field">
+          <label>Server (IP:PORT)</label>
+          <input id="host" placeholder="VD: 192.168.1.10:3000" />
+        </div>
+
+        <div class="btns">
+          <button id="btnConnect" class="primary">Kết nối</button>
+          <button id="btnDisconnect" class="danger" disabled>Ngắt</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="btns">
+          <button id="btnCreate" class="primary" disabled>Tạo phòng</button>
+        </div>
+
+        <div class="field">
+          <label>Mã phòng</label>
+          <input id="roomCode" placeholder="VD: AB12CD" maxlength="6" />
+        </div>
+
+        <div class="btns">
+          <button id="btnJoin" disabled>Vào phòng</button>
+          <button id="btnLeave" class="danger" disabled>Rời phòng</button>
+        </div>
+      </div>
+
+      <div class="status" id="status">Chưa kết nối</div>
+    </section>
+
+    <main class="grid">
+      <section class="card">
+        <div class="topline">
+          <div>
+            <div class="h">Bàn cờ</div>
+            <div class="hint" id="meInfo">Bạn: -</div>
+          </div>
+          <div class="btns">
+            <button id="btnRestart" disabled>Chơi lại</button>
+          </div>
+        </div>
+
+        <div id="board" class="board"></div>
+      </section>
+
+      <section class="card">
+        <div class="h">Người trong phòng</div>
+        <div class="list" id="people"></div>
+
+        <div class="h" style="margin-top:12px;">Chat</div>
+        <div class="chatbox" id="chatbox"></div>
+        <div class="chatrow">
+          <input id="chatInput" placeholder="Nhập tin nhắn..." disabled />
+          <button id="btnSend" disabled>Gửi</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
