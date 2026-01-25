@@ -2,7 +2,7 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 
-const PORT = 3000;
+const PORT = 15000;
 const BOARD_SIZE = 15;
 const WIN_COUNT = 5;
 
