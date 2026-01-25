@@ -3,8 +3,10 @@ let connected = false;
 
 let roomCode = null;
 let myRole = null;     // "player" | "spectator"
-let mySymbol = 0;      // 1:X 2:O
+let mySymbol = 0;      // 1:X 2:O 3:▲
 let state = null;
+
+let uiTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -13,10 +15,10 @@ const elBoard = $("board");
 const elPeople = $("people");
 const elChatbox = $("chatbox");
 const elMeInfo = $("meInfo");
+const elTurnInfo = $("turnInfo");
+const elScoreBody = $("scoreBody");
 
-function setStatus(text) {
-  elStatus.textContent = text;
-}
+function setStatus(text) { elStatus.textContent = text; }
 
 function enableUI(on) {
   $("btnConnect").disabled = on;
@@ -35,6 +37,10 @@ function enableUI(on) {
   $("btnRestart").disabled = !on;
 }
 
+function escapeHtml(s){
+  return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+}
+
 function appendChatLine(text) {
   const div = document.createElement("div");
   div.className = "msg";
@@ -46,13 +52,9 @@ function appendChatLine(text) {
 function appendChatObj(ts, name, text) {
   const div = document.createElement("div");
   div.className = "msg";
-  div.innerHTML = `<span class="t">[${ts}]</span><span class="n">${escapeHtml(name)}:</span>${escapeHtml(text)}`;
+  div.innerHTML = `<span class="t">[${escapeHtml(ts)}]</span><span class="n">${escapeHtml(name)}:</span>${escapeHtml(text)}`;
   elChatbox.appendChild(div);
   elChatbox.scrollTop = elChatbox.scrollHeight;
-}
-
-function escapeHtml(s){
-  return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
 
 function send(type, data) {
@@ -60,7 +62,14 @@ function send(type, data) {
   ws.send(JSON.stringify({ type, data }));
 }
 
-// ====== board render ======
+function symToText(sym) {
+  if (sym === 1) return "X";
+  if (sym === 2) return "O";
+  if (sym === 3) return "▲";
+  return "";
+}
+
+/* ====== BOARD ====== */
 function buildBoard() {
   elBoard.innerHTML = "";
   for (let y = 0; y < 15; y++) {
@@ -78,11 +87,12 @@ function buildBoard() {
 function paintBoard() {
   if (!state) return;
 
-  // reset win highlight
   const winSet = new Set();
   if (state.winLine && Array.isArray(state.winLine)) {
     for (const p of state.winLine) winSet.add(`${p.x},${p.y}`);
   }
+
+  const last = state.lastMove ? `${state.lastMove.x},${state.lastMove.y}` : null;
 
   const cells = elBoard.querySelectorAll(".cell");
   cells.forEach(cell => {
@@ -90,32 +100,30 @@ function paintBoard() {
     const y = Number(cell.dataset.y);
     const v = state.board[y][x];
 
-    cell.textContent = v === 1 ? "X" : (v === 2 ? "O" : "");
+    cell.textContent = symToText(v);
     cell.classList.toggle("win", winSet.has(`${x},${y}`));
-
-    // giảm hover nếu không được đánh
-    cell.style.opacity = "1";
+    cell.classList.toggle("last", last === `${x},${y}`);
   });
 
-  const turn = state.turn === 1 ? "X" : "O";
-  if (state.status === "waiting") setStatus(`Đang chờ người chơi thứ 2... (Phòng: ${state.code})`);
-  if (state.status === "playing") setStatus(`Đang chơi • Lượt: ${turn} • Phòng: ${state.code}`);
+  if (state.status === "waiting") setStatus(`Đang chờ đủ người (tối thiểu 2, tối đa 3)... • Phòng: ${state.code}`);
+  if (state.status === "playing") setStatus(`Đang chơi • Phòng: ${state.code}`);
   if (state.status === "ended") {
-    if (state.winner === 0) setStatus(`Ván kết thúc • Phòng: ${state.code}`);
-    else setStatus(`🏆 ${state.winner === 1 ? "X" : "O"} thắng • Phòng: ${state.code}`);
+    if (state.winnerSymbol === 0) setStatus(`Ván kết thúc • Phòng: ${state.code}`);
+    else setStatus(`🏆 ${symToText(state.winnerSymbol)} thắng • Phòng: ${state.code}`);
   }
 
-  // info của mình
-  if (myRole === "player") {
-    elMeInfo.textContent = `Bạn: ${mySymbol === 1 ? "X" : "O"} (${roomCode})`;
-  } else if (myRole === "spectator") {
-    elMeInfo.textContent = `Bạn đang xem (${roomCode})`;
+  if (myRole === "player") elMeInfo.textContent = `Bạn: ${symToText(mySymbol)} (${roomCode})`;
+  else if (myRole === "spectator") elMeInfo.textContent = `Bạn đang xem (${roomCode})`;
+  else elMeInfo.textContent = "Bạn: -";
+
+  if (state.status === "playing") {
+    elTurnInfo.textContent = `Lượt: ${symToText(state.turnSymbol)} • Người: ${state.turnPlayerName}`;
   } else {
-    elMeInfo.textContent = "Bạn: -";
+    elTurnInfo.textContent = `Lượt: -`;
   }
 
-  // people list
   renderPeople();
+  renderScores();
 }
 
 function renderPeople() {
@@ -128,8 +136,8 @@ function renderPeople() {
   players.forEach(p => {
     const b = document.createElement("div");
     b.className = "badge";
-    const sym = p.symbol === 1 ? "X" : "O";
-    b.innerHTML = `<div><b>${escapeHtml(p.name)}</b> <small>(${sym})</small></div>`;
+    const me = (myRole === "player" && mySymbol === p.symbol) ? " (Bạn)" : "";
+    b.innerHTML = `<div><b>${escapeHtml(p.name)}</b> <small>(${symToText(p.symbol)})${me}</small></div>`;
     elPeople.appendChild(b);
   });
 
@@ -149,23 +157,89 @@ function renderPeople() {
   }
 }
 
+function renderScores() {
+  if (!state || !elScoreBody) return;
+  const scores = state.scores || [];
+
+  // sort theo wins giảm dần
+  scores.sort((a,b) => (b.wins||0) - (a.wins||0));
+
+  if (!scores.length) {
+    elScoreBody.innerHTML = `<tr><td colspan="3" style="opacity:.7;">Chưa có dữ liệu</td></tr>`;
+    return;
+  }
+
+  const myId = (myRole === "player" && state.players)
+    ? (state.players.find(p => p.symbol === mySymbol)?.id || "")
+    : "";
+
+  elScoreBody.innerHTML = "";
+  for (const s of scores) {
+    const tr = document.createElement("tr");
+    if (myId && s.id === myId) tr.classList.add("scoreMe");
+    tr.innerHTML = `
+      <td>${escapeHtml(s.name)}</td>
+      <td>${escapeHtml(symToText(s.symbol))}</td>
+      <td>${escapeHtml(String(s.wins ?? 0))}</td>
+    `;
+    elScoreBody.appendChild(tr);
+  }
+}
+
 function onCellClick(x, y) {
   if (!state) return;
   if (myRole !== "player") return appendChatLine("⚠️ Bạn đang xem, không được đánh.");
   if (state.status !== "playing") return;
 
-  // chỉ cho đánh đúng lượt
-  if (state.turn !== mySymbol) return appendChatLine("⚠️ Chưa tới lượt bạn.");
+  if (state.turnSymbol !== mySymbol) return appendChatLine("⚠️ Chưa tới lượt bạn.");
 
   send("move", { x, y });
 }
 
-// ====== WS connect ======
+/* ====== TIMER UI (15s) ====== */
+function stopUiTimer() {
+  if (uiTimer) {
+    clearInterval(uiTimer);
+    uiTimer = null;
+  }
+}
+
+function setTimerUI(activeSymbol, secLeft) {
+  const a1 = $("t1"), a2 = $("t2"), a3 = $("t3");
+  a1.classList.toggle("active", activeSymbol === 1);
+  a2.classList.toggle("active", activeSymbol === 2);
+  a3.classList.toggle("active", activeSymbol === 3);
+
+  $("time1").textContent = activeSymbol === 1 ? String(secLeft) : "--";
+  $("time2").textContent = activeSymbol === 2 ? String(secLeft) : "--";
+  $("time3").textContent = activeSymbol === 3 ? String(secLeft) : "--";
+}
+
+function startUiTimerFromState() {
+  stopUiTimer();
+  if (!state || state.status !== "playing" || !state.turnDeadline) {
+    setTimerUI(0, 0);
+    return;
+  }
+
+  uiTimer = setInterval(() => {
+    if (!state || state.status !== "playing") {
+      stopUiTimer();
+      setTimerUI(0, 0);
+      return;
+    }
+
+    const msLeft = state.turnDeadline - Date.now();
+    const secLeft = Math.max(0, Math.ceil(msLeft / 1000));
+    setTimerUI(state.turnSymbol, secLeft);
+  }, 200);
+}
+
+/* ====== WS ====== */
 function connect() {
   const name = ($("name").value || "").trim() || "Người chơi";
   $("name").value = name;
 
-  // host input dạng "ip:port" hoặc rỗng => dùng location.host
   const hostInput = ($("host").value || "").trim();
   const host = hostInput.length ? hostInput : window.location.host;
 
@@ -176,7 +250,6 @@ function connect() {
     enableUI(true);
     setStatus("Đã kết nối server. Bạn có thể Tạo phòng hoặc Vào phòng.");
     appendChatLine("✅ Đã kết nối server.");
-
     send("hello", { name });
   };
 
@@ -186,15 +259,8 @@ function connect() {
     const type = msg.type;
     const data = msg.data || {};
 
-    if (type === "welcome") {
-      appendChatLine("📌 " + (data.note || ""));
-      return;
-    }
-
-    if (type === "hello_ok") {
-      appendChatLine(`👋 Xin chào, ${data.name} (${data.id})`);
-      return;
-    }
+    if (type === "welcome") return appendChatLine("📌 " + (data.note || ""));
+    if (type === "hello_ok") return appendChatLine(`👋 Xin chào, ${data.name} (${data.id})`);
 
     if (type === "room_created") {
       roomCode = data.code;
@@ -207,7 +273,7 @@ function connect() {
       roomCode = data.code;
       myRole = data.role;
       mySymbol = data.symbol || 0;
-      appendChatLine(`✅ Vào phòng ${roomCode} thành công (${myRole}${mySymbol ? " - " + (mySymbol===1?"X":"O") : ""})`);
+      appendChatLine(`✅ Vào phòng ${roomCode} (${myRole}${mySymbol ? " - " + symToText(mySymbol) : ""})`);
       return;
     }
 
@@ -215,31 +281,28 @@ function connect() {
       roomCode = null; myRole = null; mySymbol = 0; state = null;
       appendChatLine("👋 Đã rời phòng.");
       setStatus("Bạn đã rời phòng. Tạo/Vào phòng khác.");
-      paintBoard();
+      buildBoard();
+      stopUiTimer();
+      setTimerUI(0, 0);
+      if (elScoreBody) elScoreBody.innerHTML = `<tr><td colspan="3" style="opacity:.7;">Chưa có dữ liệu</td></tr>`;
       return;
     }
 
-    if (type === "system") {
-      appendChatLine(data.text || "");
-      return;
-    }
+    if (type === "system") return appendChatLine(data.text || "");
 
     if (type === "chat") {
-      appendChatObj(data.ts || "--:--:--", data.name || "?", data.text || "");
-      return;
+      return appendChatObj(data.ts || "--:--:--", data.name || "?", data.text || "");
     }
 
     if (type === "state") {
       state = data;
-      buildBoard();       // rebuild để tránh lỗi khi reload
+      buildBoard();
       paintBoard();
+      startUiTimerFromState();
       return;
     }
 
-    if (type === "error") {
-      appendChatLine("❌ " + (data.message || "Lỗi"));
-      return;
-    }
+    if (type === "error") return appendChatLine("❌ " + (data.message || "Lỗi"));
   };
 
   ws.onclose = () => {
@@ -248,10 +311,12 @@ function connect() {
     setStatus("Mất kết nối.");
     appendChatLine("❌ Mất kết nối server.");
     roomCode = null; myRole = null; mySymbol = 0; state = null;
+    stopUiTimer();
+    setTimerUI(0, 0);
   };
 }
 
-// ====== buttons ======
+/* ====== BUTTONS ====== */
 $("btnConnect").onclick = () => connect();
 $("btnDisconnect").onclick = () => { if (ws) ws.close(); };
 
@@ -275,8 +340,9 @@ $("chatInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("btnSend").click();
 });
 
-// init
+/* INIT */
 enableUI(false);
 buildBoard();
 setStatus("Chưa kết nối");
-appendChatLine("👉 Nhập tên + host (nếu cần) rồi bấm Kết nối.");
+appendChatLine("👉 Nhập tên + (host nếu cần) rồi bấm Kết nối.");
+setTimerUI(0, 0);
